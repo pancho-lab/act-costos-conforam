@@ -21,6 +21,23 @@ model CategoryCostRule {
   @@map("category_cost_rules")
 }
 
+model CategoryPriceAnalysis {
+  id                 String   @id @default(cuid())
+  categoryId         Int      @map("category_id") // Odoo category ID
+  companyId          Int      @map("company_id")
+  hasProducts        Boolean  @map("has_products")
+  productsCount      Int      @map("products_count")
+  uniformPrice       Decimal? @map("uniform_price") // null if not uniform
+  priceConsistency   String   @map("price_consistency") // "uniform", "mixed", "all_zero", "no_products"
+  message            String?  // Analysis message
+  suggestedAction    String?  @map("suggested_action") // "auto_fill", "review", "none"
+  analyzedAt         DateTime @default(now()) @map("analyzed_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([categoryId, companyId])
+  @@map("category_price_analysis")
+}
+
 model ProductCostOverride {
   id            String   @id @default(cuid())
   productTmplId Int      @map("product_tmpl_id") // Odoo product.template ID
@@ -33,6 +50,24 @@ model ProductCostOverride {
 
   @@unique([productTmplId, companyId])
   @@map("product_cost_overrides")
+}
+
+model DraftChange {
+  id            String   @id @default(cuid())
+  sessionId     String   @map("session_id") // User session identifier
+  entityType    String   @map("entity_type") // "product" | "category"
+  entityId      Int      @map("entity_id") // Odoo ID (product.template or product.category)
+  fieldName     String   @map("field_name") // "standard_price" for products, "cost" for categories
+  currentValue  Decimal? @map("current_value") // Current value in Odoo
+  newValue      Decimal  @map("new_value") // Proposed new value
+  entityName    String   @map("entity_name") // Product/category name for display
+  currency      String   @default("ARS")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([sessionId, entityType, entityId, fieldName])
+  @@index([sessionId])
+  @@map("draft_changes")
 }
 
 model SyncSnapshot {
