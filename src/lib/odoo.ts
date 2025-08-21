@@ -72,53 +72,61 @@ export class OdooClient {
       throw new Error(errorMatch ? errorMatch[1] : 'Odoo error');
     }
     
-    // Parse simple integer responses (like UID)
-    if (xml.includes('<int>')) {
-      const match = xml.match(/<int>(\d+)<\/int>/);
-      return match ? parseInt(match[1]) : null;
+    // Extract the main response value - handle whitespace and newlines
+    const responseMatch = xml.match(/<methodResponse>\s*<params>\s*<param>\s*<value>(.*?)<\/value>\s*<\/param>\s*<\/params>\s*<\/methodResponse>/s);
+    if (!responseMatch) {
+      console.error('Failed to parse XML response:', xml);
+      throw new Error('Invalid XML response format');
     }
     
-    // Parse boolean responses
-    if (xml.includes('<boolean>')) {
-      const match = xml.match(/<boolean>([01])<\/boolean>/);
+    return this.parseValue(responseMatch[1]);
+  }
+
+  private parseValue(content: string): any {
+    // Parse different XML-RPC value types
+    if (content.includes('<int>')) {
+      const match = content.match(/<int>(-?\d+)<\/int>/);
+      return match ? parseInt(match[1]) : 0;
+    }
+    
+    if (content.includes('<double>')) {
+      const match = content.match(/<double>(-?\d*\.?\d+)<\/double>/);
+      return match ? parseFloat(match[1]) : 0;
+    }
+    
+    if (content.includes('<string>')) {
+      const match = content.match(/<string>(.*?)<\/string>/s);
+      return match ? match[1] : '';
+    }
+    
+    if (content.includes('<boolean>')) {
+      const match = content.match(/<boolean>([01])<\/boolean>/);
       return match ? match[1] === '1' : false;
     }
-
-    // Parse array responses (simplified)
-    if (xml.includes('<array>')) {
-      try {
-        // This is a simplified parser - for production use a proper XML parser
-        const arrayContent = xml.match(/<array><data>(.*?)<\/data><\/array>/s);
-        if (arrayContent) {
-          // For now, return the raw content for debugging
-          return this.parseArrayContent(arrayContent[1]);
-        }
-      } catch (error) {
-        console.warn('Array parsing failed, returning raw XML');
+    
+    if (content.includes('<array>')) {
+      const arrayMatch = content.match(/<array><data>(.*?)<\/data><\/array>/s);
+      if (arrayMatch) {
+        return this.parseArrayContent(arrayMatch[1]);
       }
+      return [];
     }
-
-    // For complex responses, return raw for now
-    return xml;
+    
+    if (content.includes('<struct>')) {
+      return this.parseStruct(content);
+    }
+    
+    // If no specific type found, try to return as string
+    return content.trim();
   }
 
   private parseArrayContent(content: string): any[] {
-    // Very basic array parser - would need improvement for production
     const items: any[] = [];
     const valueRegex = /<value>(.*?)<\/value>/gs;
     let match;
     
     while ((match = valueRegex.exec(content)) !== null) {
-      const valueContent = match[1];
-      if (valueContent.includes('<struct>')) {
-        items.push(this.parseStruct(valueContent));
-      } else if (valueContent.includes('<string>')) {
-        const stringMatch = valueContent.match(/<string>(.*?)<\/string>/);
-        items.push(stringMatch ? stringMatch[1] : '');
-      } else if (valueContent.includes('<int>')) {
-        const intMatch = valueContent.match(/<int>(\d+)<\/int>/);
-        items.push(intMatch ? parseInt(intMatch[1]) : 0);
-      }
+      items.push(this.parseValue(match[1]));
     }
     
     return items;
@@ -132,17 +140,7 @@ export class OdooClient {
     while ((match = memberRegex.exec(content)) !== null) {
       const name = match[1];
       const value = match[2];
-      
-      if (value.includes('<string>')) {
-        const stringMatch = value.match(/<string>(.*?)<\/string>/);
-        result[name] = stringMatch ? stringMatch[1] : '';
-      } else if (value.includes('<int>')) {
-        const intMatch = value.match(/<int>(\d+)<\/int>/);
-        result[name] = intMatch ? parseInt(intMatch[1]) : 0;
-      } else if (value.includes('<array>')) {
-        const arrayMatch = value.match(/<array><data>(.*?)<\/data><\/array>/s);
-        result[name] = arrayMatch ? this.parseArrayContent(arrayMatch[1]) : [];
-      }
+      result[name] = this.parseValue(value);
     }
     
     return result;
@@ -192,9 +190,9 @@ export class OdooClient {
       'search_read',
       [domain],
       {
-        fields: fields.length > 0 ? fields : undefined,
+        fields: fields.length > 0 ? fields : [],
         offset: options.offset || 0,
-        limit: options.limit || 10, // Reduced for testing
+        limit: options.limit || 10,
         order: options.order || 'id asc',
         context: options.context || {}
       }

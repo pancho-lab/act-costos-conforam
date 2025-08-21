@@ -90,13 +90,13 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex flex-col space-y-2">
-              <a href="/categories" className="text-blue-600 hover:text-blue-800 text-sm">
+              <a href="/dashboard/categories" className="text-blue-600 hover:text-blue-800 text-sm">
                 → Gestionar costos por categoría
               </a>
-              <a href="/products" className="text-blue-600 hover:text-blue-800 text-sm">
+              <a href="/dashboard/products" className="text-blue-600 hover:text-blue-800 text-sm">
                 → Ver productos y overrides
               </a>
-              <a href="/preview" className="text-blue-600 hover:text-blue-800 text-sm">
+              <a href="/dashboard/preview" className="text-blue-600 hover:text-blue-800 text-sm">
                 → Vista previa de cambios
               </a>
             </div>

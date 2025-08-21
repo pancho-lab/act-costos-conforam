@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import type { OdooCategory, OdooProduct } from '@/types';
 
 export interface OdooConfig {
   url: string;
@@ -7,7 +8,7 @@ export interface OdooConfig {
   apiKey: string;
 }
 
-export class OdooFetchClient {
+export class OdooWorkingClient {
   private uid: number | null = null;
   
   constructor(private config: OdooConfig) {}
@@ -17,8 +18,6 @@ export class OdooFetchClient {
       return `<string>${value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</string>`;
     } else if (typeof value === 'number') {
       return Number.isInteger(value) ? `<int>${value}</int>` : `<double>${value}</double>`;
-    } else if (typeof value === 'boolean') {
-      return `<boolean>${value ? '1' : '0'}</boolean>`;
     } else if (Array.isArray(value)) {
       return `<array><data>${value.map(v => `<value>${this.valueToXml(v)}</value>`).join('')}</data></array>`;
     } else if (typeof value === 'object' && value !== null) {
@@ -26,20 +25,19 @@ export class OdooFetchClient {
         `<member><name>${k}</name><value>${this.valueToXml(v)}</value></member>`
       ).join('');
       return `<struct>${members}</struct>`;
-    } else {
-      return `<string>${String(value)}</string>`;
     }
+    return `<string>${String(value)}</string>`;
   }
 
-  private parseValue(content: string): any {
-    // Handle arrays with structs specifically (like search_read results)
-    if (content.includes('<array>')) {
-      const arrayMatch = content.match(/<array><data>(.*?)<\/data><\/array>/s);
+  private parseResponse(xml: string): any {
+    // Check for array response
+    if (xml.includes('<array>')) {
+      const arrayMatch = xml.match(/<array><data>(.*?)<\/data><\/array>/s);
       if (arrayMatch) {
         const arrayContent = arrayMatch[1];
-        const items: any[] = [];
         
         // Find all struct values in the array
+        const items: any[] = [];
         const structRegex = /<value><struct>(.*?)<\/struct><\/value>/gs;
         let match;
         
@@ -65,7 +63,7 @@ export class OdooFetchClient {
               const doubleMatch = valueContent.match(/<double>(-?\d*\.?\d+)<\/double>/);
               item[name] = doubleMatch ? parseFloat(doubleMatch[1]) : 0;
             } else if (valueContent.includes('<array>')) {
-              // Handle nested arrays (like parent_id which might be [id, "name"])
+              // Parse nested array (like parent_id which is [id, "name"])
               const nestedArrayMatch = valueContent.match(/<array><data>(.*?)<\/data><\/array>/s);
               if (nestedArrayMatch) {
                 const values: any[] = [];
@@ -96,97 +94,15 @@ export class OdooFetchClient {
         
         return items;
       }
-      return [];
     }
     
-    // Parse simple values
-    if (content.includes('<int>')) {
-      const match = content.match(/<int>(-?\d+)<\/int>/);
-      return match ? parseInt(match[1]) : 0;
+    // Check for simple int response (like UID)
+    if (xml.includes('<int>')) {
+      const match = xml.match(/<int>(\d+)<\/int>/);
+      return match ? parseInt(match[1]) : null;
     }
     
-    if (content.includes('<double>')) {
-      const match = content.match(/<double>(-?\d*\.?\d+)<\/double>/);
-      return match ? parseFloat(match[1]) : 0;
-    }
-    
-    if (content.includes('<string>')) {
-      const match = content.match(/<string>(.*?)<\/string>/s);
-      return match ? match[1] : '';
-    }
-    
-    if (content.includes('<boolean>')) {
-      const match = content.match(/<boolean>([01])<\/boolean>/);
-      return match ? match[1] === '1' : false;
-    }
-    
-    if (content.includes('<struct>')) {
-      return this.parseStruct(content);
-    }
-    
-    // If no specific type found, try to return as string
-    return content.trim();
-  }
-
-  private parseArrayContent(content: string): any[] {
-    const items: any[] = [];
-    const valueRegex = /<value>(.*?)<\/value>/gs;
-    let match;
-    
-    while ((match = valueRegex.exec(content)) !== null) {
-      items.push(this.parseValue(match[1]));
-    }
-    
-    return items;
-  }
-
-  private parseStruct(content: string): any {
-    const result: any = {};
-    const memberRegex = /<member>\s*<name>(.*?)<\/name>\s*<value>(.*?)<\/value>\s*<\/member>/gs;
-    let match;
-    
-    while ((match = memberRegex.exec(content)) !== null) {
-      const name = match[1];
-      const valueContent = match[2];
-      
-      if (valueContent.includes('<string>')) {
-        const stringMatch = valueContent.match(/<string>(.*?)<\/string>/);
-        result[name] = stringMatch ? stringMatch[1] : '';
-      } else if (valueContent.includes('<int>')) {
-        const intMatch = valueContent.match(/<int>(-?\d+)<\/int>/);
-        result[name] = intMatch ? parseInt(intMatch[1]) : 0;
-      } else if (valueContent.includes('<double>')) {
-        const doubleMatch = valueContent.match(/<double>(-?\d*\.?\d+)<\/double>/);
-        result[name] = doubleMatch ? parseFloat(doubleMatch[1]) : 0;
-      } else if (valueContent.includes('<boolean>')) {
-        const boolMatch = valueContent.match(/<boolean>([01])<\/boolean>/);
-        result[name] = boolMatch ? boolMatch[1] === '1' : false;
-      } else if (valueContent.includes('<array>')) {
-        const arrayMatch = valueContent.match(/<array><data>(.*?)<\/data><\/array>/s);
-        result[name] = arrayMatch ? this.parseArrayContent(arrayMatch[1]) : [];
-      } else {
-        result[name] = valueContent.trim();
-      }
-    }
-    
-    return result;
-  }
-
-  private parseXmlResponse(xml: string): any {
-    // Check for faults
-    if (xml.includes('<fault>')) {
-      const errorMatch = xml.match(/<string>([^<]+)<\/string>/);
-      throw new Error(errorMatch ? errorMatch[1] : 'Odoo error');
-    }
-    
-    // Extract the main response value - handle whitespace and newlines
-    const responseMatch = xml.match(/<methodResponse>\s*<params>\s*<param>\s*<value>(.*?)<\/value>\s*<\/param>\s*<\/params>\s*<\/methodResponse>/s);
-    if (!responseMatch) {
-      console.error('Failed to parse XML response:', xml);
-      throw new Error('Invalid XML response format');
-    }
-    
-    return this.parseValue(responseMatch[1]);
+    return xml;
   }
 
   async auth(): Promise<number> {
@@ -214,7 +130,7 @@ export class OdooFetchClient {
     }
 
     const responseText = await response.text();
-    const result = this.parseXmlResponse(responseText);
+    const result = this.parseResponse(responseText);
     
     if (typeof result === 'number' && result > 0) {
       this.uid = result;
@@ -258,18 +174,34 @@ export class OdooFetchClient {
     }
 
     const responseText = await response.text();
-    const result = this.parseXmlResponse(responseText);
-    return Array.isArray(result) ? result : [result];
+    const result = this.parseResponse(responseText);
+    return Array.isArray(result) ? result : [];
   }
 
-  async getCategories(limit: number = 50): Promise<any[]> {
-    return this.searchRead('product.category', [], ['id', 'name', 'parent_id'], { limit, order: 'name asc' });
+  async getCategories(limit: number = 50): Promise<OdooCategory[]> {
+    const result = await this.searchRead('product.category', [], ['id', 'name', 'parent_id'], { limit, order: 'name asc' });
+    return result.map(cat => ({
+      id: cat.id,
+      name: cat.name,
+      parent_id: Array.isArray(cat.parent_id) ? cat.parent_id[0] : cat.parent_id,
+      parent_name: Array.isArray(cat.parent_id) ? cat.parent_id[1] : null
+    }));
   }
 
-  async getProducts(domain: any[] = [], limit: number = 10): Promise<any[]> {
+  async getProducts(domain: any[] = [], limit: number = 10): Promise<OdooProduct[]> {
     const baseDomain = [['active', '=', true]];
     const finalDomain = domain.length > 0 ? [...baseDomain, ...domain] : baseDomain;
-    return this.searchRead('product.template', finalDomain, ['id', 'name', 'default_code', 'categ_id', 'standard_price'], { limit, order: 'name asc' });
+    const result = await this.searchRead('product.template', finalDomain, ['id', 'name', 'default_code', 'categ_id', 'standard_price'], { limit, order: 'name asc' });
+    
+    return result.map(prod => ({
+      id: prod.id,
+      name: prod.name,
+      default_code: prod.default_code || null,
+      categ_id: Array.isArray(prod.categ_id) ? prod.categ_id[0] : prod.categ_id,
+      categ_name: Array.isArray(prod.categ_id) ? prod.categ_id[1] : null,
+      standard_price: prod.standard_price || 0,
+      active: true
+    }));
   }
 
   async testConnection(): Promise<{ success: boolean; uid?: number; error?: string }> {
@@ -283,4 +215,25 @@ export class OdooFetchClient {
       };
     }
   }
+}
+
+// Factory singleton
+let odooClient: OdooWorkingClient | null = null;
+
+export function getOdooClient(): OdooWorkingClient {
+  if (!odooClient) {
+    const config = {
+      url: process.env.ODOO_URL!,
+      db: process.env.ODOO_DB!,
+      user: process.env.ODOO_USER!,
+      apiKey: process.env.ODOO_API_KEY!,
+    };
+
+    if (!config.url || !config.db || !config.user || !config.apiKey) {
+      throw new Error('Missing required Odoo configuration. Check ODOO_URL, ODOO_DB, ODOO_USER, and ODOO_API_KEY environment variables.');
+    }
+
+    odooClient = new OdooWorkingClient(config);
+  }
+  return odooClient;
 }
