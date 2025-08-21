@@ -6,182 +6,187 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Sistema de Gestión de Costos para Odoo 14 Community - Conforam-Rincon del Aroma**
 
-Aplicación web (SPA/SSR) con login Google que se integra con Odoo 14 Community para:
-- Leer categorías y productos desde Odoo
-- Definir costo por categoría
-- Definir costo por producto (sobre-escribe el de categoría)
-- Calcular costo efectivo (precedencia: producto > categoría)
-- Actualizar masivamente el campo `standard_price` en Odoo
+Web application that integrates with Odoo 14 Community to manage product costs with automatic price analysis and draft changes system. Key features:
+- Read categories and products from Odoo via XML-RPC
+- Define base costs per category with automatic price analysis
+- Define product-specific cost overrides (takes precedence over category)
+- Calculate effective costs with proper precedence rules
+- Batch update `standard_price` field in Odoo with draft/preview system
 
-**Stack Tecnológico Elegido:** Next.js 14 (App Router) + TypeScript + Tailwind + NextAuth + PostgreSQL + Prisma
+**Tech Stack:** Next.js 14 (App Router) + TypeScript + Tailwind + NextAuth + SQLite + Prisma
 
-## Integración Odoo 14 (CRÍTICO)
-
-### Conexión
-- **Autenticación:** XML-RPC usando API key como password
-- **Modelos:** `product.category`, `product.template`
-- **Campo objetivo:** `standard_price` (company-dependent)
-
-### Variables de Entorno Requeridas
-```bash
-ODOO_URL=https://<tu_odoo>
-ODOO_DB=<tu_db>
-ODOO_USER=<tu_usuario>
-ODOO_API_KEY=<tu_api_key>
-OAUTH_GOOGLE_ID=<id_google>
-OAUTH_GOOGLE_SECRET=<secret_google>
-USE_ACCOUNTING_REVALUATION=false  # Feature flag: write directo vs método contable
-```
-
-### Cliente Odoo TypeScript
-Funciones principales:
-- `auth()` - Autenticación XML-RPC
-- `searchRead(model, domain, fields, opts)` - Lectura de datos
-- `write(model, ids, vals, ctx)` - Escritura directa
-- `changeStandardPrice(productIds, newCost, companyId)` - Método contable
-
-## Reglas de Negocio (PRECEDENCIA)
-
-1. **Producto con override** → usar `product_cost_override.cost`
-2. **Sin override** → usar `category_cost_rule.cost` de la categoría
-3. **Sin regla** → excluir de actualización masiva
-
-**Consideraciones multi-compañía:** `standard_price` es company-dependent, usar `context={"company_id": X}`
-
-## Base de Datos Local (Prisma)
-
-### Modelos Principales
-- `CategoryCostRule` - Costos por categoría
-- `ProductCostOverride` - Overrides por producto  
-- `SyncSnapshot` - Registro de ejecuciones masivas
-- `AuditLog` - Auditoría completa
-- `User` - Usuarios con roles Admin/Viewer
-
-### Esquema de Precedencia
-Los costos efectivos **NO** se persisten, se calculan al vuelo aplicando las reglas.
-
-## Arquitectura del Sistema
-
-```
-Frontend (Next.js 14 App Router)
-├── Server Actions (sin API Routes)
-├── NextAuth (Google OAuth)
-└── Prisma Client
-
-Backend Services  
-├── Odoo Client (XML-RPC)
-├── PostgreSQL Database
-└── Cache Layer (memoria/Redis)
-
-External
-├── Odoo 14 Community
-└── Google OAuth
-```
-
-## Estructura del Proyecto
-
-```
-src/
-├── app/                    # App Router pages
-│   ├── (auth)/login/
-│   ├── dashboard/
-│   ├── categories/
-│   ├── products/
-│   └── preview/
-├── components/             # UI Components
-│   ├── ui/                # shadcn/ui base
-│   ├── tables/           # Tablas editables
-│   └── forms/
-├── lib/                   # Utilities
-│   ├── odoo.ts           # Cliente Odoo XML-RPC
-│   ├── db.ts             # Prisma client
-│   └── auth.ts           # NextAuth config
-├── server/               # Server Actions
-│   ├── categories.ts
-│   ├── products.ts
-│   └── costs.ts
-└── types/               # TypeScript types
-```
-
-## Comandos de Desarrollo
+## Commands & Development Workflow
 
 ```bash
-# Setup inicial
-npm install
-npx prisma migrate dev --name init
-npx prisma db seed
-
-# Desarrollo
-npm run dev              # Next.js dev server
-npm run test            # Vitest unit tests
-npm run test:e2e        # Playwright E2E
+# Development
+npm run dev              # Start Next.js dev server
+npm run build           # Build for production
 npm run lint            # ESLint
 npm run typecheck       # TypeScript check
 
-# Producción
-npm run build
-npm run start
+# Database
+npm run db:migrate      # Run Prisma migrations
+npm run db:generate     # Generate Prisma client
+npm run db:studio       # Open Prisma Studio GUI
+npm run db:seed         # Seed database
+
+# Testing
+npm run test            # Run Vitest unit tests
+npm run test:e2e        # Run Playwright E2E tests
+npm run test:odoo-connection  # Test Odoo XML-RPC connection
 ```
 
-## Features Críticas
+## Odoo Integration Architecture (CRITICAL)
 
-### Actualización Masiva
-- **Batching:** Lotes de 50-100 productos
-- **Feature Flag:** `USE_ACCOUNTING_REVALUATION` (write directo vs método contable)
-- **Dry Run:** Vista previa antes → después
-- **Auditoría:** Registro completo en `SyncSnapshot` y `AuditLog`
-- **Manejo de errores:** Reintentos exponenciales
+### Connection & Authentication
+- **Protocol:** XML-RPC over HTTPS using custom fetch-based client (`src/lib/odoo-simple.ts`)
+- **Models:** `product.category`, `product.template` 
+- **Target Field:** `standard_price` (company-dependent field in Odoo)
+- **Authentication:** Username + API key (not password)
 
-### Seguridad
-- **Roles:** Admin (edición) vs Viewer (solo lectura)
-- **Secrets:** Solo en servidor, nunca exponer credenciales Odoo
-- **Auditoría:** Logging completo de cambios y ejecuciones
+### Environment Variables Required
+```bash
+DATABASE_URL="file:./dev.db"     # SQLite database
+ODOO_URL=https://your-odoo-instance
+ODOO_DB=your_database_name
+ODOO_USER=your_username
+ODOO_API_KEY=your_api_key
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your_secret
+GOOGLE_CLIENT_ID=your_google_oauth_id
+GOOGLE_CLIENT_SECRET=your_google_oauth_secret
+```
 
-### UX
-- **Tablas editables** con guardado inline
-- **Búsqueda y filtros** en productos
-- **Progreso visual** en actualizaciones masivas
-- **Validación** de montos y permisos
+### Odoo Client Implementation
+- **File:** `src/lib/odoo-simple.ts` - Production client used throughout the app
+- **Alternative clients:** `odoo-final.ts`, `odoo-library.ts` for testing/comparison
+- **Key methods:**
+  - `auth()` - XML-RPC authentication returning UID
+  - `searchRead(model, domain, fields, options)` - Query Odoo records
+  - `searchCount(model, domain)` - Count records matching criteria
+  - `write(model, ids, values, context)` - Update Odoo records
+- **XML-RPC Implementation:** Custom parser handling Odoo's XML responses (structs, arrays, values)
 
-## Casos Edge a Considerar
+## Core Business Logic & Data Flow
 
-- Productos inactivos
-- Categorías sin regla definida
-- Productos sin categoría
-- Múltiples compañías
-- Productos con `cost_method` ≠ `standard`
-- Valuación automática FIFO/AVCO
+### Cost Precedence Rules
+1. **Product Override** → Use `ProductCostOverride.cost` (highest priority)
+2. **Category Rule** → Use `CategoryCostRule.cost` for the product's category
+3. **No Rule** → Exclude from batch updates (no cost defined)
 
-## Plan de Implementación (Sprint 1 - 2 semanas)
+**Multi-company consideration:** `standard_price` is company-dependent in Odoo, always use `context={"company_id": X}`
 
-**Semana 1:** Setup, Auth, Odoo Client, DB Schema
-**Semana 2:** UI Core, Reglas de Costos, Actualización Masiva, Tests
+### Draft Changes System
+- **Session-based:** Changes are stored per user session before committing to Odoo
+- **Preview Mode:** Users can see before/after states via `/dashboard/preview`
+- **API Endpoints:**
+  - `/api/draft-changes` - Product cost changes
+  - `/api/draft-category-changes` - Category cost changes
+  - `/api/batch-update` - Commit all draft changes to Odoo
 
-## Criterios de Aceptación
+### Automatic Price Analysis
+- **Trigger:** Runs automatically when "Actualizar desde Odoo" is clicked
+- **Analysis Types:**
+  - `uniform` - All products in category have same cost
+  - `mixed` - Products have different costs
+  - `all_zero` - All products have zero/null cost
+  - `no_products` - Category has no products
+- **Auto-fill:** Categories with uniform prices automatically get base cost set
+- **Storage:** Results persisted in `CategoryPriceAnalysis` table
 
-- ✅ Login Google funcionando
-- ✅ Catálogo visible y filtrable  
-- ✅ Edición de costos con validación
-- ✅ Cálculo correcto de precedencia
-- ✅ Vista previa de cambios
-- ✅ Actualización masiva en lotes
-- ✅ Feature flag contable operativo
-- ✅ Roles Admin/Viewer
-- ✅ Auditoría completa
+### Database Schema (SQLite + Prisma)
+**Core Models:**
+- `CategoryCostRule` - Base costs per category
+- `ProductCostOverride` - Product-specific cost overrides
+- `CategoryPriceAnalysis` - Automatic price analysis results  
+- `DraftChange` - Session-based pending changes
+- `SyncSnapshot` - Batch update execution logs
+- `AuditLog` - Complete change auditing
 
-## Importante para Claude Code
+## Application Architecture
 
-**SIEMPRE usar MCP Context7 para consultar mejores prácticas actualizadas:**
-- Antes de implementar nuevas funciones, consultar MCP Context7 para patrones y mejores prácticas
-- Verificar las últimas recomendaciones de Next.js 14, TypeScript, y frameworks utilizados
-- Consultar estrategias de performance, seguridad, y testing más actuales
-- Usar MCP Context7 para resolver problemas complejos de arquitectura
+### Frontend Architecture (Next.js 14 App Router)
+```
+src/app/
+├── dashboard/
+│   ├── page.tsx              # Main dashboard with stats
+│   ├── categories/page.tsx   # Category management with price analysis
+│   ├── products/page.tsx     # Product cost management
+│   └── preview/page.tsx      # Draft changes preview
+├── api/                      # API Routes (REST endpoints)
+│   ├── odoo/
+│   │   ├── categories/       # Fetch categories with server-side filtering
+│   │   └── products/         # Fetch products with cost calculation
+│   ├── draft-changes/        # Session-based draft management
+│   ├── analyze-category-prices/ # Automatic price analysis
+│   └── batch-update/         # Commit changes to Odoo
+└── auth/[...nextauth]/       # NextAuth configuration
+```
 
-**Notas de desarrollo completado:**
-- ✅ Setup base del proyecto completado (Next.js 14 + TypeScript + Tailwind)
-- ✅ Autenticación NextAuth con Google OAuth configurada  
-- ✅ Cliente Odoo XML-RPC funcional con fetch (evita problemas HTTPS)
-- ✅ Base de datos SQLite local con esquemas Prisma
-- ✅ Conexión exitosa con Odoo Conforam-Rincon del Aroma (UID: 6)
-- ⚠️ Parser XML necesita mejoras para extraer datos complejos de arrays/structs
-- 🔄 Proyecto listo para desarrollo de features principales
+### Key Integration Patterns
+- **Server-Side Filtering:** Categories API supports `priceFilter` parameter for efficient pagination
+- **Session-Based Drafts:** Changes are stored per user session, not immediately committed
+- **Batch Processing:** Price analysis runs in batches of 5 categories to avoid API overload
+- **Real-time Updates:** UI reflects draft changes immediately, database sync happens on commit
+
+### Data Synchronization Flow
+1. **Odoo → Local Cache:** "Actualizar desde Odoo" pulls fresh data + triggers price analysis
+2. **Local Editing:** Changes stored in draft tables by session ID
+3. **Preview:** Shows before/after comparison from drafts + calculated costs
+4. **Batch Commit:** Applies all draft changes to Odoo via XML-RPC `write()` calls
+
+## Critical Implementation Details
+
+### User Experience Patterns
+- **Inline Editing:** Categories and products support click-to-edit cost fields
+- **Draft Changes Indicator:** Blue highlighting shows items with pending changes
+- **Smart Pagination:** Server-side filtering maintains consistent 50 results per page
+- **Visual Analysis Status:** Categories show ✅ uniform, ⚠️ mixed, 🔸 no cost indicators
+- **Auto-refresh Analysis:** Price analysis runs automatically when refreshing from Odoo
+
+### Error Handling & Edge Cases
+- **Odoo Connection Issues:** Graceful fallback with retry mechanisms in XML-RPC client  
+- **Empty Categories:** Handle categories with no products gracefully
+- **Concurrent Users:** Session-based drafts prevent user conflict
+- **Large Datasets:** Pagination + server-side filtering for performance
+- **Invalid Costs:** Client-side validation before saving drafts
+
+### Security & Authentication
+- **NextAuth Google OAuth:** Handles user authentication
+- **API Routes Protection:** Session validation on sensitive endpoints
+- **Odoo Credentials:** Server-side only, never exposed to client
+- **Role-based Access:** Admin vs Viewer roles (planned for future implementation)
+
+## Important Notes for Claude Code Development
+
+### When Working on This Codebase:
+- **Always use `src/lib/odoo-simple.ts`** - This is the production Odoo client, other files are for testing/comparison
+- **Session Management:** Draft changes use NextAuth session.user.email as session identifier
+- **Database:** Uses SQLite with Prisma - run `npm run db:generate` after schema changes
+- **XML-RPC Parsing:** The custom parser handles Odoo's XML format - be careful when modifying
+- **Price Analysis:** Triggers automatically on "Actualizar desde Odoo" - don't duplicate this functionality
+- **Filtering Logic:** Server-side filtering in categories API, client-side removed for performance
+
+### Current Implementation Status:
+- ✅ Google OAuth authentication working
+- ✅ Odoo XML-RPC integration functional (UID: 6 on Conforam-Rincon del Aroma)
+- ✅ Category management with automatic price analysis
+- ✅ Product cost management with draft changes
+- ✅ Server-side filtering and pagination
+- ✅ Draft changes preview system
+- ✅ Database persistence for analysis results
+- ✅ Batch processing for performance
+
+### Key Files to Understand:
+- `src/lib/odoo-simple.ts` - Odoo XML-RPC client implementation
+- `src/app/api/odoo/categories/route.ts` - Categories API with server-side filtering
+- `src/app/api/analyze-category-prices/route.ts` - Automatic price analysis
+- `src/app/dashboard/categories/page.tsx` - Main categories management UI
+- `prisma/schema.prisma` - Database schema with all models
+
+### Architecture Principles:
+- Session-based draft changes before committing to Odoo
+- Server-side filtering for efficient pagination  
+- Automatic price analysis with database persistence
+- Real-time UI updates with batch processing
+- Proper error handling for Odoo connection issues
