@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Sistema de Gestión de Costos para Odoo 14 Community**
+**Sistema de Gestión de Costos para Odoo 14 Community - Conforam-Rincon del Aroma**
 
 Aplicación web (SPA/SSR) con login Google que se integra con Odoo 14 Community para:
 - Leer categorías y productos desde Odoo
@@ -168,3 +168,20 @@ npm run start
 - ✅ Feature flag contable operativo
 - ✅ Roles Admin/Viewer
 - ✅ Auditoría completa
+
+## Importante para Claude Code
+
+**SIEMPRE usar MCP Context7 para consultar mejores prácticas actualizadas:**
+- Antes de implementar nuevas funciones, consultar MCP Context7 para patrones y mejores prácticas
+- Verificar las últimas recomendaciones de Next.js 14, TypeScript, y frameworks utilizados
+- Consultar estrategias de performance, seguridad, y testing más actuales
+- Usar MCP Context7 para resolver problemas complejos de arquitectura
+
+**Notas de desarrollo completado:**
+- ✅ Setup base del proyecto completado (Next.js 14 + TypeScript + Tailwind)
+- ✅ Autenticación NextAuth con Google OAuth configurada  
+- ✅ Cliente Odoo XML-RPC funcional con fetch (evita problemas HTTPS)
+- ✅ Base de datos SQLite local con esquemas Prisma
+- ✅ Conexión exitosa con Odoo Conforam-Rincon del Aroma (UID: 6)
+- ⚠️ Parser XML necesita mejoras para extraer datos complejos de arrays/structs
+- 🔄 Proyecto listo para desarrollo de features principales

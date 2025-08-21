@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model CategoryCostRule {
+  id          String   @id @default(cuid())
+  categoryId  Int      @map("category_id") // Odoo category ID
+  cost        Decimal
+  currency    String   @default("ARS")
+  companyId   Int      @map("company_id")
+  updatedBy   String   @map("updated_by")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([categoryId, companyId])
+  @@map("category_cost_rules")
+}
+
+model ProductCostOverride {
+  id            String   @id @default(cuid())
+  productTmplId Int      @map("product_tmpl_id") // Odoo product.template ID
+  cost          Decimal? // null = sin override
+  currency      String   @default("ARS")
+  companyId     Int      @map("company_id")
+  updatedBy     String   @map("updated_by")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([productTmplId, companyId])
+  @@map("product_cost_overrides")
+}
+
+model SyncSnapshot {
+  id                       String   @id @default(cuid())
+  executedBy              String   @map("executed_by")
+  executedAt              DateTime @default(now()) @map("executed_at")
+  companyId               Int      @map("company_id")
+  itemsTotal              Int      @map("items_total")
+  itemsUpdated            Int      @map("items_updated")
+  mode                    String   // "dryRun" | "commit"
+  useAccountingRevaluation Boolean @default(false) @map("use_accounting_revaluation")
+  summary                 String?  // JSON string: { errors: [], warnings: [], success: [] }
+
+  @@map("sync_snapshots")
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  ts       DateTime @default(now())
+  actor    String
+  action   String   // "CREATE" | "UPDATE" | "DELETE" | "SYNC"
+  entity   String   // "CategoryCostRule" | "ProductCostOverride" | "OdooProduct"
+  entityId String   @map("entity_id")
+  before   String?  // JSON string
+  after    String?  // JSON string  
+  meta     String?  // JSON string: { companyId, batchId, etc }
+
+  @@map("audit_logs")
+}
+
+// NextAuth required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  role          String    @default("VIEWER") // "ADMIN" | "VIEWER"
+  companyId     Int?      @map("company_id") // Default company
+  accounts      Account[]
+  sessions      Session[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
